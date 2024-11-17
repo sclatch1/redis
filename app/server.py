@@ -2,6 +2,7 @@ import socket
 import logging
 from contextlib import contextmanager
 from dataclasses import dataclass
+import asyncio
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(__name__)
@@ -17,38 +18,47 @@ class CloseServer(Exception):
 class CloseClient(Exception):
     pass
 
-@contextmanager
-def make_server(address: Address):
-    """Creates a server socket and binds it to the specified address"""
-    server_socket = socket.create_server((address.host, address.port), reuse_port=True)
-    server_socket.listen()
-    log.info(f"Server listening on {address.host}:{address.port}")
+#@contextmanager
+async def run_server(address: Address):
+    """Start the server socket and listen to incoming client connections"""
+    #server_socket = socket.create_server((address.host, address.port), reuse_port=True)
+    server = await asyncio.start_server(handle_client, address.host, address.port)
+    addr = server.sockets[0].getsockname()
+    log.info(f"Server listening on {addr}")
     try:
-        yield server_socket
-    finally:
-        server_socket.close()
-        log.info("Server socket close")
+        await server.serve_forever()
+    except asyncio.CancelledError:
+        log.info("server shutting down")
+        server.close()
+        await server.wait_closed()
 
-def next_client(server_socket: socket.socket):
-    """Yields new client connections from the server socket"""
-    while True:
-        try:
-            conn, addr = server_socket.accept()
-            log.info(f"New connection from {addr}")
-            yield conn, addr
-        except Exception as e:
-            log.error(f"New connection from {addr}")
-            raise CloseServer from e
+async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    """handles incoming messages from a client, responding with PONG to PING commands"""
+    address = writer.get_extra_info('peername')
+    try:
+        while True:
+            data = await reader.read(1024)
+            if not data:
+                log.info(f"COnnection closed by {address}")
+                break
+            message = data.decode('utf-8')
+            log.debug(f"received message from {address}: {message}")
+            await handle_message(message, writer)
+    except Exception as e:
+        log.error(f"error handling message from {address}: {e}")
+    finally:
+        writer.close()
+        await writer.wait_closed()
+        log.info(f"closed connection from {address}")
+    
         
-def next_message(conn: socket.socket, address: tuple[str,int]):
-    """Yields message received from the client socket"""
-    while True:
-        try:
-            log.debug(conn)
-            message = conn.recv(1024)
-            if not message:
-                log.info(f"Connection close by {address}")
-                raise CloseClient("Client closed connection")
-            yield message
-        except CloseClient:
-            log.info(f"Ending message reception from {address}")
+async def handle_message(message: str, writer: asyncio.StreamWriter):
+    """Handle the PING messafe and sends PONG response"""
+    log.info(f"got {message.strip().lower()} in handl_message")
+    if "ping" in message.strip().lower():
+        log.debug(f"responding {message} with PONG")
+        writer.write(b'+PONG\r\n')
+        await writer.drain()
+    else:
+        log.error(f"unknown message: {message}")
+
