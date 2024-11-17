@@ -4,7 +4,8 @@ import asyncio
 
 from app.server import (
     Address,
-    run_server
+    CommandHandler,
+    Server
 )
 
 
@@ -20,11 +21,10 @@ async def main():
     print("Logs from your program will appear here!")
     
     server_addr = Address('localhost', 6379)
+    command_handler = CommandHandler()
+    server = Server(server_addr, command_handler)
 
-
-    await run_server(server_addr)
-
-    
+    await server.run()
     
     
 
