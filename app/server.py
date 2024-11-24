@@ -19,6 +19,7 @@ class CommandHandler:
     """Handles Redis-like commands."""
     
     store: Dict[str,str] = field(default_factory=dict)
+    expirations: Dict[str, int] = field(default_factory=dict)  # Stores expiration times in milliseconds.
 
     def __post_init__(self):
         """Automatically maps methods starting with 'cmd_' to commands."""
@@ -38,6 +39,16 @@ class CommandHandler:
         except Exception as e:
             log.error(f"Error executing command {command_name}: {e}")
             return "-ERR command execution failed\r\n"
+    
+    def _is_expired(self, key: str) -> bool:
+        if key not in self.expirations:
+            return False
+        current_time = asyncio.get_event_loop().time() * 1000 # current time in milliseconds
+        if current_time >= self.expirations[key]:
+            del self.expirations[key]
+            del self.store[key]
+            return True
+        return False
 
     def cmd_ping(self, args: List[str]) -> str:
         """Handles the PING command."""
@@ -55,7 +66,17 @@ class CommandHandler:
             return "-ERR wrong number of arguments for 'set' command\r\n"
         key, value = args[0], args[1]
         self.store[key] = value
-        # Mocked key-value storage for simplicity
+        # Check for optional PX argument
+        if len(args) > 2:
+            option = args[2].lower()
+            if option == "px" and len(args) > 3:
+                try:
+                    expiry = int(args[3])
+                    current_time = asyncio.get_event_loop().time() * 1000  # Current time in milliseconds
+                    self.expirations[key] = current_time + expiry
+                except ValueError:
+                    return "-ERR PX requires a valid integer\r\n"
+
         return "+OK\r\n"
 
     def cmd_get(self, args: List[str]) -> str:
@@ -63,6 +84,10 @@ class CommandHandler:
         if len(args) < 1:
             return "-ERR wrong number of arguments for 'get' command\r\n"
         key = args[0]
+
+        if self._is_expired(key):
+            return "$-1\r\n"
+    
         if key not in self.store:
             return "$-1\r\n"  # RESP nil for missing keys
         value = self.store[key]
