@@ -20,6 +20,7 @@ class CommandHandler:
     
     store: Dict[str,str] = field(default_factory=dict)
     expirations: Dict[str, int] = field(default_factory=dict)  # Stores expiration times in milliseconds.
+    config: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         """Automatically maps methods starting with 'cmd_' to commands."""
@@ -49,6 +50,18 @@ class CommandHandler:
             del self.store[key]
             return True
         return False
+    
+    def cmd_config(self, args: List[str]) -> str:
+        """Handles the CONFIG GET commmand."""
+        if len(args) != 2 or args[0].lower() != "get":
+            return "-ERR wrong number of arguments for 'config' command\r\n"
+        
+        parameter = args[1].lower()
+        if parameter not in self.config:
+            return "*0\r\n"
+        
+        value = self.config[parameter]
+        return f"*2\r\n${len(parameter)}\r\n{parameter}\r\n${len(value)}\r\n{value}\r\n"
 
     def cmd_ping(self, args: List[str]) -> str:
         """Handles the PING command."""

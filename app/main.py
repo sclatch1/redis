@@ -1,6 +1,7 @@
-import socket  # noqa: F401
 import logging
 import asyncio
+import argparse
+
 
 from app.server import (
     Address,
@@ -17,16 +18,23 @@ log = logging.getLogger(__name__)
     
 
 async def main():
-    # You can use print statements as follows for debugging, they'll be visible when running tests.
-    print("Logs from your program will appear here!")
-    
-    server_addr = Address('localhost', 6379)
-    command_handler = CommandHandler()
-    server = Server(server_addr, command_handler)
+    parser = argparse.ArgumentParser(description="Redis-like server with RDB persistence.")
+    parser.add_argument("--dir", type=str, default="/tmp" , help="Directory to store RDB files.")
+    parser.add_argument("--dbfilename", type=str, default="dump.rdb", help="Name of the RDB file.")
+    args = parser.parse_args()
 
-    await server.run()
-    
-    
+    # Initialize CommandHandler with configuration parameters
+    command_handler = CommandHandler(config={
+        "dir": args.dir,
+        "dbfilename": args.dbfilename,
+    })
+
+    # Start the server
+    server = Server(Address('localhost', 6379), command_handler)
+    try:
+        await server.run()
+    except asyncio.CancelledError:
+        log.info("Server shutdown initiated.")
 
 if __name__ == "__main__":
     asyncio.run(main())
